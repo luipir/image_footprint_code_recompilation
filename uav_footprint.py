@@ -147,15 +147,22 @@ fieldOfViewTall = fieldOfViewWide = diagonalFOV
 print("fieldOfViewWide", fieldOfViewWide)
 print("fieldOfViewTall", fieldOfViewTall)
 
+#######################################################
+# footprint calculation inspired bu:
+# https://photo.stackexchange.com/questions/56596/how-do-i-calculate-the-ground-footprint-of-an-aerial-camera
+
+# nadir disntance (by definition is 0)
 d0 = 0
+# distance of the nearest point to nadir
 d1 = relativeAltitude*(math.tan(90 - gimballPitch - 0.5*fieldOfViewTall))
+# distance of the farest point to nadir
 d2 = relativeAltitude*(math.tan(90 - gimballPitch + 0.5*fieldOfViewTall))
 
 print("Northing (degree)", gimballYaw)
 print("       d0 (nadir)", d0)
 print("d1 (m from nadir)", d1)
 print("d2 (m from nadir)", d2)
-
+#######################################################
 
 c=CameraCalculator()
 offsets=c.getBoundingPolygon(
