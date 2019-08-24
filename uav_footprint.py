@@ -139,11 +139,16 @@ print('flightYaw',flightYaw)
 
 
 diagonalFOV = 84.0
+# use this FOV calculation if referred to 35mm diagonal FOV
 fieldOfViewTall = diagonalFOV / (math.sqrt(1+math.pow(imageRatio, 2)))
 fieldOfViewWide = diagonalFOV / (math.sqrt(1+math.pow(1.0/imageRatio, 2)))
+# use this FOV calculation if use a fixed FOV
 fieldOfViewTall = fieldOfViewWide = diagonalFOV
+
+# use this if calculating FOV basing on focal lenght
 #fieldOfViewWide = 2*math.degrees(math.atan(36.0/(2*teoreticFocalLength)))
 #fieldOfViewTall = 2*math.degrees(math.atan(24.0/(2*teoreticFocalLength)))
+
 print("fieldOfViewWide", fieldOfViewWide)
 print("fieldOfViewTall", fieldOfViewTall)
 
