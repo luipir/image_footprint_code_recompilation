@@ -85,6 +85,14 @@ droneLocation.transform(tr)
 print("utm Lat", droneLocation.y())
 print("utm Lon", droneLocation.x())
 
+# create nadir layer
+nadirGeometry = QgsGeometry.fromPointXY(QgsPointXY(droneLocation.x(), droneLocation.y()))
+nadirLayer = QgsVectorLayer('Point?crs={}'.format(local_utm), 'nadir', 'memory' )
+provider = nadirLayer.dataProvider()
+feature = QgsFeature()
+feature.setGeometry(nadirGeometry)
+provider.addFeatures([feature])
+QgsProject.instance().addMapLayer(nadirLayer)
 
 #altitude_from_sealevel = exifTags['GPS GPSAltitude'].values[0].num / exifTags['GPS GPSAltitude'].values[0].den
 realFocalLength = exifTags['EXIF FocalLength'].values[0].num / exifTags['EXIF FocalLength'].values[0].den
@@ -123,7 +131,7 @@ relativeAltitude = float(droneMetadata['drone-dji:RelativeAltitude'])
 print('relativeAltitude', relativeAltitude)
 
 gimballRoll = float(droneMetadata['drone-dji:GimbalRollDegree'])
-gimballYaw = float(droneMetadata['drone-dji:GimbalYawDegree']) + 180
+gimballYaw = float(droneMetadata['drone-dji:GimbalYawDegree'])
 gimballPitch = float(droneMetadata['drone-dji:GimbalPitchDegree'])
 # gimballPitch = -36
 print('gimballPitch',gimballPitch)
@@ -140,8 +148,8 @@ print('flightYaw',flightYaw)
 
 diagonalFOV = 84.0
 # use this FOV calculation if referred to 35mm diagonal FOV
-fieldOfViewTall = diagonalFOV / (math.sqrt(1+math.pow(imageRatio, 2)))
-fieldOfViewWide = diagonalFOV / (math.sqrt(1+math.pow(1.0/imageRatio, 2)))
+# fieldOfViewTall = diagonalFOV / (math.sqrt(1+math.pow(imageRatio, 2)))
+# fieldOfViewWide = diagonalFOV / (math.sqrt(1+math.pow(1.0/imageRatio, 2)))
 # use this FOV calculation if use a fixed FOV
 fieldOfViewTall = fieldOfViewWide = diagonalFOV
 
@@ -167,6 +175,26 @@ print("Northing (degree)", gimballYaw)
 print("       d0 (nadir)", d0)
 print("d1 (m from nadir)", d1)
 print("d2 (m from nadir)", d2)
+
+# empirical parameters offsets to match the real view
+# these parameters are necessary because seems that image or assumptions
+# are not enough to match the field of view
+# assumed feald of view is not calculated and get from camera specifications
+# if calculated from 35mm equivalence the result is far from the real one!
+d1_offset = 44
+d2_offset = 350
+
+parameters = {
+    'INPUT': nadirLayer,
+    'AZIMUTH': gimballYaw,
+    'WIDTH': fieldOfViewWide,
+    'OUTER_RADIUS': abs(d2) + d2_offset,
+    'INNER_RADIUS': abs(d1) + d1_offset,
+    'OUTPUT': 'memory:'
+}
+result = processing.run("native:wedgebuffers", parameters)
+#QgsProject.instance().addMapLayer(result['OUTPUT'])
+
 #######################################################
 
 c=CameraCalculator()
@@ -176,7 +204,7 @@ offsets=c.getBoundingPolygon(
     relativeAltitude,
     gimballRoll,
     gimballPitch,
-    gimballYaw)
+    gimballYaw + 180)
 # import ipdb; ipdb.set_trace()
 for i, p in enumerate(offsets):
     print("point:", i, '-', p.x, p.y, p.z)
@@ -191,7 +219,7 @@ footprintGeometry = QgsGeometry.fromPolygonXY([[p0, p1, p2, p3, p0]])
 footprintGeometry = QgsGeometry.fromPolygonXY([[p0, p2, p3, p1, p0]])
 
 # create footprint layer with one polygon feature
-footprintLayer = QgsVectorLayer('Polygon', 'footprint', 'memory' )
+footprintLayer = QgsVectorLayer('Polygon?crs={}'.format(local_utm), 'footprint', 'memory' )
 provider = footprintLayer.dataProvider()
 feature = QgsFeature()
 feature.setGeometry(footprintGeometry)
