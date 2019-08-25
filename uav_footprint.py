@@ -92,6 +92,9 @@ provider = nadirLayer.dataProvider()
 feature = QgsFeature()
 feature.setGeometry(nadirGeometry)
 provider.addFeatures([feature])
+existingLayer = QgsProject.instance().mapLayersByShortName(nadirLayer.name())
+if existingLayer:
+    QgsProject.instance().removeMapLayer(existingLayer[0])
 QgsProject.instance().addMapLayer(nadirLayer)
 
 #altitude_from_sealevel = exifTags['GPS GPSAltitude'].values[0].num / exifTags['GPS GPSAltitude'].values[0].den
@@ -146,30 +149,28 @@ print('flightRoll',flightRoll)
 print('flightYaw',flightYaw)
 
 
-diagonalFOV = 84.0
 # use this FOV calculation if referred to 35mm diagonal FOV
+# diagonalFOV = 84.0
 # fieldOfViewTall = diagonalFOV / (math.sqrt(1+math.pow(imageRatio, 2)))
 # fieldOfViewWide = diagonalFOV / (math.sqrt(1+math.pow(1.0/imageRatio, 2)))
-# use this FOV calculation if use a fixed FOV
-fieldOfViewTall = fieldOfViewWide = diagonalFOV
 
-# use this if calculating FOV basing on focal lenght
-#fieldOfViewWide = 2*math.degrees(math.atan(36.0/(2*teoreticFocalLength)))
-#fieldOfViewTall = 2*math.degrees(math.atan(24.0/(2*teoreticFocalLength)))
+# use this FOV calculation if use a fixed FOV
+fieldOfViewWide = 84.0
+fieldOfViewTall = 53.8
 
 print("fieldOfViewWide", fieldOfViewWide)
 print("fieldOfViewTall", fieldOfViewTall)
 
 #######################################################
-# footprint calculation inspired bu:
+# footprint calculation inspired by:
 # https://photo.stackexchange.com/questions/56596/how-do-i-calculate-the-ground-footprint-of-an-aerial-camera
 
 # nadir disntance (by definition is 0)
 d0 = 0
 # distance of the nearest point to nadir
-d1 = relativeAltitude*(math.tan(90 - gimballPitch - 0.5*fieldOfViewTall))
+d1 = relativeAltitude*(math.tan(math.radians(90 - gimballPitch - 0.5*fieldOfViewTall)))
 # distance of the farest point to nadir
-d2 = relativeAltitude*(math.tan(90 - gimballPitch + 0.5*fieldOfViewTall))
+d2 = relativeAltitude*(math.tan(math.radians(90 - gimballPitch + 0.5*fieldOfViewTall)))
 
 print("Northing (degree)", gimballYaw)
 print("       d0 (nadir)", d0)
@@ -181,8 +182,17 @@ print("d2 (m from nadir)", d2)
 # are not enough to match the field of view
 # assumed feald of view is not calculated and get from camera specifications
 # if calculated from 35mm equivalence the result is far from the real one!
-d1_offset = 44
-d2_offset = 350
+# 190
+# d1_offset = 80
+# d2_offset = 850
+# 818
+# d1_offset = -132
+# d2_offset = -582
+
+# no offset is necessary and calculation almost match image 
+# without considering camera deformation
+d1_offset = 0
+d2_offset = 0
 
 parameters = {
     'INPUT': nadirLayer,
@@ -190,21 +200,48 @@ parameters = {
     'WIDTH': fieldOfViewWide,
     'OUTER_RADIUS': abs(d2) + d2_offset,
     'INNER_RADIUS': abs(d1) + d1_offset,
-    'OUTPUT': 'memory:'
+    'OUTPUT': 'memory:trigonometric_footprint'
 }
 result = processing.run("native:wedgebuffers", parameters)
-#QgsProject.instance().addMapLayer(result['OUTPUT'])
+existingLayer = QgsProject.instance().mapLayersByShortName(result['OUTPUT'].name())
+if existingLayer:
+    QgsProject.instance().removeMapLayer(existingLayer[0])
+# QgsProject.instance().addMapLayer(result['OUTPUT'])
+
+
 
 #######################################################
+# footprint calculation inspired by:
+# https://stackoverflow.com/questions/38099915/calculating-coordinates-of-an-oblique-aerial-image
+# and code ported from java to camera_calculator.py
+
+# empirical parameters offsets to match the real view
+# these parameters are necessary because seems that image or assumptions
+# are not enough to match the field of view
+# assumed feald of view is not calculated and get from camera specifications
+# if calculated from 35mm equivalence the result is far from the real one!
+# 190
+yaw_offset = 168
+pitch_offset = -11
+# 818
+# yaw_offset = 205
+# pitch_offset = 20
+# FOVtall_offset = 45
+# FOVwide_offset = +40
+
+# yaw_offset = 168
+# pitch_offset = -11
+FOVtall_offset = 21
+FOVwide_offset = 0
 
 c=CameraCalculator()
 offsets=c.getBoundingPolygon(
-    fieldOfViewTall,
-    fieldOfViewWide, 
+    math.radians(fieldOfViewWide + FOVwide_offset),
+    math.radians(fieldOfViewTall + FOVtall_offset),
     relativeAltitude,
-    gimballRoll,
-    gimballPitch,
-    gimballYaw + 180)
+    math.radians(gimballRoll),
+    math.radians(gimballPitch + pitch_offset),
+    math.radians(gimballYaw + yaw_offset))
 # import ipdb; ipdb.set_trace()
 for i, p in enumerate(offsets):
     print("point:", i, '-', p.x, p.y, p.z)
@@ -216,14 +253,16 @@ p2 = QgsPointXY(droneLocation.x() + offsets[2].x, droneLocation.y() + offsets[2]
 p3 = QgsPointXY(droneLocation.x() + offsets[3].x, droneLocation.y() + offsets[3].y)
 
 footprintGeometry = QgsGeometry.fromPolygonXY([[p0, p1, p2, p3, p0]])
-footprintGeometry = QgsGeometry.fromPolygonXY([[p0, p2, p3, p1, p0]])
 
 # create footprint layer with one polygon feature
-footprintLayer = QgsVectorLayer('Polygon?crs={}'.format(local_utm), 'footprint', 'memory' )
+footprintLayer = QgsVectorLayer('Polygon?crs={}'.format(local_utm), 'matrixtranslation_footprint', 'memory' )
 provider = footprintLayer.dataProvider()
 feature = QgsFeature()
 feature.setGeometry(footprintGeometry)
 provider.addFeatures([feature])
 
 # show it
-QgsProject.instance().addMapLayer(footprintLayer)
+existingLayer = QgsProject.instance().mapLayersByShortName(footprintLayer.name())
+if existingLayer:
+    QgsProject.instance().removeMapLayer(existingLayer[0])
+# QgsProject.instance().addMapLayer(footprintLayer)
