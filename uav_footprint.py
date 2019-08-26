@@ -206,7 +206,7 @@ result = processing.run("native:wedgebuffers", parameters)
 existingLayer = QgsProject.instance().mapLayersByShortName(result['OUTPUT'].name())
 if existingLayer:
     QgsProject.instance().removeMapLayer(existingLayer[0])
-# QgsProject.instance().addMapLayer(result['OUTPUT'])
+QgsProject.instance().addMapLayer(result['OUTPUT'])
 
 
 
