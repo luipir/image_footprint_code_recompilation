@@ -54,6 +54,7 @@ def _from_xmp(key, xmpDict):
 
 imgpath = '/mnt/virtualmachines/INSITU/UAV/sample_images/Obligual/Lugo/DJI_0190.JPG'
 # imgpath = '/mnt/virtualmachines/INSITU/UAV/sample_images/Obligual/As Pontes/DJI_0818.JPG'
+# imgpath = '/mnt/virtualmachines/INSITU/UAV/sample_images/Obligual/Lugo/DJI_0193.JPG'
 #imgpath = '/mnt/virtualmachines/INSITU/UAV/sample_images/JorgeLama/f1757952.jpg'
 
 
@@ -156,7 +157,9 @@ print('flightYaw',flightYaw)
 
 # use this FOV calculation if use a fixed FOV
 fieldOfViewWide = 84.0
-fieldOfViewTall = 53.8
+# fieldOfViewTall = 53.8
+fieldOfViewTall_multiplier = 0.855
+fieldOfViewTall = (fieldOfViewWide/imageRatio)*fieldOfViewTall_multiplier
 
 print("fieldOfViewWide", fieldOfViewWide)
 print("fieldOfViewTall", fieldOfViewTall)
