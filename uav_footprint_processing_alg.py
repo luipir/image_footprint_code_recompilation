@@ -314,7 +314,8 @@ class UAVImageFootprint(QgsProcessingAlgorithm):
         else:
             feedback.pushInfo(self.tr("Vertical FOV: ")+str(verticalFOV))
 
-        # do calculation
+        # do calculation inspired by:
+        # https://photo.stackexchange.com/questions/56596/how-do-i-calculate-the-ground-footprint-of-an-aerial-camera
         # distance of the nearest point to nadir (bottom distance)
         bottomDistance = relativeAltitude*(math.tan(math.radians(90 - gimballPitch - 0.5*verticalFOV)))
         # distance of the farest point to nadir (upper distance)
