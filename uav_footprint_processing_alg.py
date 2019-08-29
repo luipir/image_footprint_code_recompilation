@@ -20,6 +20,7 @@ __author__ = 'Luigi Pirelli'
 __date__ = 'August 2019'
 __copyright__ = '(C) 2019, Luigi Pirelli'
 
+import time
 import math
 import exifread
 from libxmp.utils import file_to_dict
@@ -113,11 +114,10 @@ class UAVImageFootprint(QgsProcessingAlgorithm):
         )
 
         self.addParameter(
-            QgsProcessingParameterFeatureSink (
+            QgsProcessingParameterVectorDestination (
                 self.OUTPUT_FOOTPRINT,
                 self.tr('Image footprint'),
-                QgsProcessing.TypeVectorPolygon,
-
+                QgsProcessing.TypeVectorPolygon
             )
         )
 
@@ -209,26 +209,26 @@ class UAVImageFootprint(QgsProcessingAlgorithm):
         feedback.pushInfo(self.tr('Source CRS is: ')+self.tr(sourceCRS.authid()))
         feedback.pushInfo(self.tr('Destination CRS is: ')+self.tr(destinationCRS.authid()))
 
-        # set fileds for footprint and nadir vectors
+        # set fields for footprint and nadir vectors
         fields = QgsFields()
-        fields.append(QgsField('gimball_pitch', QVariant.Double))
-        fields.append(QgsField('gimball_roll', QVariant.Double))
-        fields.append(QgsField('gimball_jaw', QVariant.Double))
-        fields.append(QgsField('relative_altitude', QVariant.Double))
-        fields.append(QgsField('image', QVariant.String))
-        fields.append(QgsField('camera_model', QVariant.String))
-        fields.append(QgsField('camera_vertical_FOV', QVariant.Double))
-        fields.append(QgsField('camera_horizontal_FOV', QVariant.Double))
+        # fields.append(QgsField('gimball_pitch', QVariant.Double))
+        # fields.append(QgsField('gimball_roll', QVariant.Double))
+        # fields.append(QgsField('gimball_jaw', QVariant.Double))
+        # fields.append(QgsField('relative_altitude', QVariant.Double))
+        # fields.append(QgsField('image', QVariant.String))
+        # fields.append(QgsField('camera_model', QVariant.String))
+        # fields.append(QgsField('camera_vertical_FOV', QVariant.Double))
+        # fields.append(QgsField('camera_horizontal_FOV', QVariant.Double))
 
-        (footprintSink, footprint_dest_id) = self.parameterAsSink(
-            parameters,
-            self.OUTPUT_FOOTPRINT,
-            context,
-            fields,
-            QgsWkbTypes.Polygon,
-            destinationCRS)
-        if footprintSink is None:
-            raise QgsProcessingException(self.invalidSinkError(parameters, self.OUTPUT_FOOTPRINT))
+        # (footprintSink, footprint_dest_id) = self.parameterAsSink(
+        #     parameters,
+        #     self.OUTPUT_FOOTPRINT,
+        #     context,
+        #     fields,
+        #     QgsWkbTypes.Polygon,
+        #     destinationCRS)
+        # if footprintSink is None:
+        #     raise QgsProcessingException(self.invalidSinkError(parameters, self.OUTPUT_FOOTPRINT))
 
         (nadirSink, nadir_dest_id) = self.parameterAsSink(
             parameters,
@@ -269,7 +269,7 @@ class UAVImageFootprint(QgsProcessingAlgorithm):
         except Exception as ex:
             raise QgsProcessingException(str(ex))
         
-        # extract all importat tagged information about the image
+        # extract all important tagged information about the image
 
         # get image lat/lon that will be the coordinates of nadir point
         # converted to destination CRS
@@ -335,25 +335,34 @@ class UAVImageFootprint(QgsProcessingAlgorithm):
         feature.setGeometry(nadirGeometry)
         nadirSink.addFeature(feature, QgsFeatureSink.FastInsert)
 
-        # before to use the sink in the processing alg (wedge buffer) it's necesary to "cast" it as featureSource
-        # recognised by processing.run method. Sink is usually used as output not as input!
-        # a = QgsProcessingUtils.variantToSource(nadirSink, context)
-        # a = QgsProcessingFeatureSourceDefinition(a.source())
-        QgsProject.instance().addMapLayer(nadirSink)
+        # create a memory layer with nadir point to be input to "native:wedgebuffers" algorithm
+        # it's not possible to use directly the FeatureSink becaseu can't be accepted by processing.run.
+        # the reason is that a generic sink can be also NOT a layer but a more generic sink where features
+        # can't be recovered.
+        tempNadirLayer = QgsVectorLayer('Point?crs={}'.format(destinationCRS.authid()), 'tempNadirLayer', 'memory' )
+        provider = tempNadirLayer.dataProvider()
+        feature = QgsFeature()
+        feature.setGeometry(nadirGeometry)
+        provider.addFeatures([feature])
 
         # create polygon using wedge buffer processign algorithm
         parameters = {
-            'INPUT': nadir_dest_id,
+            'INPUT': tempNadirLayer,
             'AZIMUTH': gimballYaw,
             'WIDTH': horizontalFOV,
             'OUTER_RADIUS': abs(bottomDistance) + nadirToBottomOffset,
             'INNER_RADIUS': abs(upperDistance) + nadirToupperOffset,
-            'OUTPUT': footprintSink
+            'OUTPUT': parameters[self.OUTPUT_FOOTPRINT]
         }
-        result = processing.run("native:wedgebuffers", parameters)
+        wedge_buffer_result = processing.run("native:wedgebuffers", 
+                                            parameters,
+                                            is_child_algorithm=True,
+                                            context = context,
+                                            feedback = feedback)
 
         # Return the results
         results = {
-            self.OUTPUT_FOOTPRINT: footprint_dest_id,
-            self.OUTPUT_NADIR: nadir_dest_id
+            self.OUTPUT_FOOTPRINT: wedge_buffer_result['OUTPUT'],
+            self.OUTPUT_NADIR: nadir_dest_id,
         }
+        return results
