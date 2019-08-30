@@ -168,7 +168,25 @@ class UAVImageFootprint(QgsProcessingAlgorithm):
         return self.tr('UAV image footprint')
 
     def shortHelpString(self):
-        return self.tr('TODO')
+        return self.tr('''The algoritm generates the nadir drone point and the obligual camera footprint polygon (not dem proyected)
+                       basing on image metadata (EXIF and XMP).\n
+                       It uses Wedge buffer processing algoritm to create the polygon => Generate error if pitch angle is greater
+                       than (-45 degree -verticalFOV/2 ) e.g. if buffer distance is negative.\n
+                       Advanced parameters are useful to adjust the footprint to the camera view. The camera model does not consider
+                       camera distorsion and calibration model\n
+                       The gemetric algoritm to calculate footprint is based simple trigonometry and ispired by:\n
+                       <a href="https://photo.stackexchange.com/questions/56596/how-do-i-calculate-the-ground-footprint-of-an-aerial-camera">https://photo.stackexchange.com/questions/56596/how-do-i-calculate-the-ground-footprint-of-an-aerial-camera</a>
+
+                       <b>Advanced parameters</b>
+                       <b>Calc vertical FOV using image ratio</b>: If Checked the vertical FOV (Tall camera angle) is calculated. If Unckeked get the value from
+                       "Tall camera angle" field
+                       <b>Tall camera angle</b>: Use this value if "Calc Vertical FOV using image ratio" is uncheked
+                       <b>Empiric multiplier to fix tall FOV basing on image ratio</b>: A multiplier applied to calculated vertical FOV. Useful to adapt
+                       angle to the real view. Many times vertical FOV is a hard to
+                       discover value not registerd in the metadata.
+                       <b>Offset to add to bottom distance result</b>: value added to nadir point dinstance
+                       <b>Offset to add to upper distance result</b>:value added to nadir point dinstance
+                       ''')
 
     def initAlgorithm(self, config=None):
 
@@ -233,7 +251,7 @@ class UAVImageFootprint(QgsProcessingAlgorithm):
         self.addParameter(parameter)
 
         parameter = QgsProcessingParameterBoolean(self.USE_IMAGE_RATIO_FOR_VERTICAL_FOV,
-                                                  self.tr('Calc Vertical FOV using image ratio'),
+                                                  self.tr('Calc vertical FOV using image ratio'),
                                                   defaultValue = True)
         parameter.setFlags(parameter.flags() | QgsProcessingParameterDefinition.FlagAdvanced)
         self.addParameter(parameter)
