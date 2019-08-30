@@ -241,18 +241,18 @@ class UAVImageFootprint(QgsProcessingAlgorithm):
         )
 
         # vertical referred to flight direction => means tall angle
+        parameter = QgsProcessingParameterBoolean(self.USE_IMAGE_RATIO_FOR_VERTICAL_FOV,
+                                                  self.tr('Calc vertical FOV using image ratio'),
+                                                  defaultValue = True)
+        parameter.setFlags(parameter.flags() | QgsProcessingParameterDefinition.FlagAdvanced)
+        self.addParameter(parameter)
+
         parameter = QgsProcessingParameterNumber(self.VERTICAL_FOV,
                                                  self.tr('Tall camera angle'),
                                                  type = QgsProcessingParameterNumber.Double,
                                                  defaultValue = 54.0,
                                                  minValue = 0,
                                                  maxValue = 360)
-        parameter.setFlags(parameter.flags() | QgsProcessingParameterDefinition.FlagAdvanced)
-        self.addParameter(parameter)
-
-        parameter = QgsProcessingParameterBoolean(self.USE_IMAGE_RATIO_FOR_VERTICAL_FOV,
-                                                  self.tr('Calc vertical FOV using image ratio'),
-                                                  defaultValue = True)
         parameter.setFlags(parameter.flags() | QgsProcessingParameterDefinition.FlagAdvanced)
         self.addParameter(parameter)
 
