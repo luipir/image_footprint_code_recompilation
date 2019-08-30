@@ -22,8 +22,8 @@ __copyright__ = '(C) 2019, Luigi Pirelli'
 
 import time
 import math
-import exifread
-from libxmp.utils import file_to_dict
+from xml.etree import cElementTree as ElementTree
+from osgeo import gdal
 
 from qgis.PyQt.QtCore import (QCoreApplication,
                               QVariant)
@@ -54,16 +54,80 @@ from qgis.core import (QgsProcessing,
                        QgsWkbTypes)
 import processing
 
+###############################################
+# XML to dict parsing code get from:
+# https://stackoverflow.com/questions/2148119/how-to-convert-an-xml-string-to-a-dictionary
+class XmlListConfig(list):
+    def __init__(self, aList):
+        for element in aList:
+            if element:
+                # treat like dict
+                if len(element) == 1 or element[0].tag != element[1].tag:
+                    self.append(XmlDictConfig(element))
+                # treat like list
+                elif element[0].tag == element[1].tag:
+                    self.append(XmlListConfig(element))
+            elif element.text:
+                text = element.text.strip()
+                if text:
+                    self.append(text)
+
+
+class XmlDictConfig(dict):
+    '''
+    Example usage:
+    >>> tree = ElementTree.parse('your_file.xml')
+    >>> root = tree.getroot()
+    >>> xmldict = XmlDictConfig(root)
+    Or, if you want to use an XML string:
+    >>> root = ElementTree.XML(xml_string)
+    >>> xmldict = XmlDictConfig(root)
+    And then use xmldict for what it is... a dict.
+    '''
+    def __init__(self, parent_element):
+        if parent_element.items():
+            self.update(dict(parent_element.items()))
+        for element in parent_element:
+            if element:
+                # treat like dict - we assume that if the first two tags
+                # in a series are different, then they are all different.
+                if len(element) == 1 or element[0].tag != element[1].tag:
+                    aDict = XmlDictConfig(element)
+                # treat like list - we assume that if the first two tags
+                # in a series are the same, then the rest are the same.
+                else:
+                    # here, we put the list in dictionary; the key is the
+                    # tag name the list elements all share in common, and
+                    # the value is the list itself 
+                    aDict = {element[0].tag: XmlListConfig(element)}
+                # if the tag has attributes, add those to the dict
+                if element.items():
+                    aDict.update(dict(element.items()))
+                self.update({element.tag: aDict})
+            # this assumes that if you've got an attribute in a tag,
+            # you won't be having any text. This may or may not be a 
+            # good idea -- time will tell. It works for the way we are
+            # currently doing XML configuration files...
+            elif element.items():
+                self.update({element.tag: dict(element.items())})
+            # finally, if there are no child tags and no attributes, extract
+            # the text
+            else:
+                self.update({element.tag: element.text})
+
+###############################################
+
 def _convert_to_degress(value):
     """
     Helper function to convert the GPS coordinates stored in the EXIF to degress in float format
     :param value:
-    :type value: exifread.utils.Ratio
+    :type value: str (e.g. '(43) (16) (20.3444)')
     :rtype: float
     """
-    d = float(value.values[0].num) / float(value.values[0].den)
-    m = float(value.values[1].num) / float(value.values[1].den)
-    s = float(value.values[2].num) / float(value.values[2].den)
+    values = value.translate(str.maketrans({'(':None, ')':None})).split()
+    d = float(values[0])
+    m = float(values[1])
+    s = float(values[2])
 
     return d + (m / 60.0) + (s / 3600.0)
 
@@ -250,21 +314,48 @@ class UAVImageFootprint(QgsProcessingAlgorithm):
 
         # extract exif and XMP data
         try:
-            exifTags = {}
-            with open(uavImage.source(), 'rb') as f:
-                exifTags = exifread.process_file(f)
+            gdal.UseExceptions()
+            dataFrame = gdal.Open(uavImage.source(), gdal.GA_ReadOnly)
+            domains = dataFrame.GetMetadataDomainList()
 
-            # TODO: use pure XML parsing method
-            xmp = file_to_dict( uavImage.source() )
-            dictKey = None
-            for k in xmp.keys():
-                if 'drone' in k:
-                    dictKey=k
-                    break
+            # get exif metadata
+            exifTags = dataFrame.GetMetadata()
+            for key, value in exifTags.items():
+                #print(key, ':', value)
+                pass
 
+            # select metadata from XMP domain only
             droneMetadata = {}
-            for tup in xmp[dictKey]:
-                droneMetadata[tup[0]] = tup[1]
+            for domain in domains:
+                metadata = dataFrame.GetMetadata(domain)
+
+                # skip not relevant tags
+                if isinstance(metadata, dict):
+                    for key, value in metadata.items():
+                        #print(domain, "--", key, ":", value)
+                        pass
+
+                # probably XMPs
+                if isinstance(metadata, list):
+                    if domain == 'xml:XMP':
+                        # parse xml
+                        root = ElementTree.XML(metadata[0])
+                        xmldict = XmlDictConfig(root)
+
+                        # skip first element containing only description and domain info
+                        subdict = list(xmldict.values())[0]
+
+                        # get XMP tags
+                        subdict = list(subdict.values())[0]
+                        # parse XMP stuffs removing head namespace in the key 
+                        # e.g.
+                        #    {http://www.dji.com/drone-dji/1.0/}AbsoluteAltitude
+                        # become
+                        #    AbsoluteAltitude
+                        for key, value in subdict.items():
+                            #print(domain, '--', key, value)
+                            key = key.split('}')[1]
+                            droneMetadata[key] = value
 
         except Exception as ex:
             raise QgsProcessingException(str(ex))
@@ -273,36 +364,48 @@ class UAVImageFootprint(QgsProcessingAlgorithm):
 
         # get image lat/lon that will be the coordinates of nadir point
         # converted to destination CRS
-        lat = _convert_to_degress(exifTags['GPS GPSLatitude'])
-        emisphere = exifTags['GPS GPSLatitudeRef']
-        lon = _convert_to_degress(exifTags['GPS GPSLongitude'])
-        lonReference = exifTags['GPS GPSLongitudeRef']
+        lat = _convert_to_degress(exifTags['EXIF_GPSLatitude'])
+        emisphere = exifTags['EXIF_GPSLatitudeRef']
+        lon = _convert_to_degress(exifTags['EXIF_GPSLongitude'])
+        lonReference = exifTags['EXIF_GPSLongitudeRef']
 
-        if emisphere.values == 'S':
+        if emisphere == 'S':
             lat = -lat
-        if lonReference.values == 'W':
+        if lonReference == 'W':
             lon = -lon
 
-        exifImageWidth = exifTags['EXIF ExifImageWidth'].values[0]
-        exifImageLength = exifTags['EXIF ExifImageLength'].values[0]
+        exifDateTime = exifTags['EXIF_DateTime']
+        feedback.pushInfo("EXIF_DateTime: "+exifDateTime)
+
+        exifImageWidth = exifTags['EXIF_PixelXDimension']
+        exifImageLength = exifTags['EXIF_PixelYDimension']
         imageRatio = float(exifImageWidth)/float(exifImageLength)
-        feedback.pushInfo("EXIF ExifImageWidth: "+str(exifImageWidth))
-        feedback.pushInfo("EXIF ExifImageLength: "+str(exifImageLength))
+        feedback.pushInfo("EXIF_PixelXDimension: "+exifImageWidth)
+        feedback.pushInfo("EXIF_PixelYDimension: "+exifImageLength)
         feedback.pushInfo("Image ratio: "+str(imageRatio))
 
-        relativeAltitude = float(droneMetadata['drone-dji:RelativeAltitude'])
+        # drone especific metadata
+        droneMaker = exifTags['EXIF_Make']
+        droneModel = exifTags['EXIF_Model']
+        feedback.pushInfo("EXIF_Make: "+droneMaker)
+        feedback.pushInfo("EXIF_Model: "+droneModel)
+
+        # drone maker substitute XMP drone dictKey
+        dictKey = droneMaker
+
+        relativeAltitude = float(droneMetadata['RelativeAltitude'])
         feedback.pushInfo(self.tr("XMP {}:RelativeAltitude: ".format(dictKey))+str(relativeAltitude))
 
-        gimballRoll = float(droneMetadata['drone-dji:GimbalRollDegree'])
-        gimballPitch = float(droneMetadata['drone-dji:GimbalPitchDegree'])
-        gimballYaw = float(droneMetadata['drone-dji:GimbalYawDegree'])
+        gimballRoll = float(droneMetadata['GimbalRollDegree'])
+        gimballPitch = float(droneMetadata['GimbalPitchDegree'])
+        gimballYaw = float(droneMetadata['GimbalYawDegree'])
         feedback.pushInfo("XMP {}:GimbalRollDegree: ".format(dictKey)+str(gimballRoll))
         feedback.pushInfo("XMP {}:GimbalPitchDegree: ".format(dictKey)+str(gimballPitch))
         feedback.pushInfo("XMP {}:GimbalYawDegree: ".format(dictKey)+str(gimballYaw))
 
-        flightRoll = float(droneMetadata['drone-dji:FlightRollDegree'])
-        flightPitch = float(droneMetadata['drone-dji:FlightPitchDegree'])
-        flightYaw = float(droneMetadata['drone-dji:FlightYawDegree'])
+        flightRoll = float(droneMetadata['FlightRollDegree'])
+        flightPitch = float(droneMetadata['FlightPitchDegree'])
+        flightYaw = float(droneMetadata['FlightYawDegree'])
         feedback.pushInfo("XMP {}:FlightRollDegree: ".format(dictKey)+str(flightRoll))
         feedback.pushInfo("XMP {}:FlightPitchDegree: ".format(dictKey)+str(flightPitch))
         feedback.pushInfo("XMP {}:FlightYawDegree: ".format(dictKey)+str(flightYaw))
