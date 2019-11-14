@@ -319,6 +319,7 @@ class BatchUAVImageFootprints(QgsProcessingAlgorithm):
         fields.append(QgsField('gimball_roll', QVariant.Double))
         fields.append(QgsField('gimball_jaw', QVariant.Double))
         fields.append(QgsField('relative_altitude', QVariant.Double))
+        fields.append(QgsField('layer', QVariant.String))
         fields.append(QgsField('path', QVariant.String))
         fields.append(QgsField('camera_model', QVariant.String))
         fields.append(QgsField('camera_vertical_FOV', QVariant.Double))
@@ -487,11 +488,15 @@ class BatchUAVImageFootprints(QgsProcessingAlgorithm):
                 feedback.pushInfo(self.tr("Nadir to upper distance (metre): ")+str(upperDistance))
 
                 # create base feature to add
+                layerName = os.path.basename(source)
+                layerName = os.path.splitext(layerName)[0]
+
                 feature = QgsFeature(fields)
                 feature.setAttribute('gimball_pitch', gimballPitch)
                 feature.setAttribute('gimball_roll', gimballRoll)
                 feature.setAttribute('gimball_jaw', gimballYaw)
                 feature.setAttribute('relative_altitude', relativeAltitude)
+                feature.setAttribute('layer', layerName)
                 feature.setAttribute('path', source)
                 feature.setAttribute('camera_model', droneModel)
                 feature.setAttribute('camera_vertical_FOV', verticalFOV)
