@@ -315,6 +315,7 @@ class BatchUAVImageFootprints(QgsProcessingAlgorithm):
 
         # set fields for footprint and nadir vectors
         fields = QgsFields()
+        fields.append(QgsField('date_time', QVariant.String))
         fields.append(QgsField('gimball_pitch', QVariant.Double))
         fields.append(QgsField('gimball_roll', QVariant.Double))
         fields.append(QgsField('gimball_jaw', QVariant.Double))
@@ -492,6 +493,7 @@ class BatchUAVImageFootprints(QgsProcessingAlgorithm):
                 layerName = os.path.splitext(layerName)[0]
 
                 feature = QgsFeature(fields)
+                feature.setAttribute('date_time', exifDateTime)
                 feature.setAttribute('gimball_pitch', gimballPitch)
                 feature.setAttribute('gimball_roll', gimballRoll)
                 feature.setAttribute('gimball_jaw', gimballYaw)
